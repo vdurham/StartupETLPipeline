@@ -5,8 +5,8 @@ import logging
 import pandas as pd
 from datetime import datetime
 import json
-from sqlalchemy import create_engine, text
 import numpy as np
+from src.etl.founder_features import process_founder_features
 
 from config import CHECKPOINT_INTERVAL, DB_TYPE
 from src.db.connection import get_connection
@@ -100,16 +100,37 @@ class DataLoader:
         """Load all transformed data into the database."""
         logger.info("Starting data loading")
         
-        # Load organizations first (foreign key dependencies)
-        self.load_data(transformed_data['organizations'], 'organizations')
-        
-        # Load people next
-        self.load_data(transformed_data['people'], 'people')
-        
-        # Load jobs last
-        self.load_data(transformed_data['jobs'], 'jobs')
-        
-        logger.info("Data loading completed successfully")
+        with get_connection() as conn:
+            # Start a transaction
+            conn.execute("BEGIN TRANSACTION")
+            
+            try:
+                # Load organizations first (foreign key dependencies)
+                self.load_data(transformed_data['organizations'], 'organizations')
+                
+                # Load people next
+                self.load_data(transformed_data['people'], 'people')
+                
+                # Load jobs last
+                self.load_data(transformed_data['jobs'], 'jobs')
+                conn.execute("COMMIT")
+                
+                # Process and load founder features
+                logger.info("Processing and loading founder features")
+                process_founder_features(
+                    conn=conn,
+                    jobs_df=transformed_data['jobs'],
+                    organizations_df=transformed_data['organizations'],
+                    people_df=transformed_data['people']
+                )
+                                
+                logger.info("Data loading completed successfully")
+                
+            except Exception as e:
+                # Rollback on error
+                logger.error(f"Error during data loading: {e}")
+                conn.execute("ROLLBACK")
+                raise
 
     def _bulk_upsert(self, conn, table_name, df, primary_key='uuid'):
         """

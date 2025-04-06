@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     type TEXT,
     cb_url TEXT,
     domain TEXT,
-    homepage_url TEXT UNIQUE,
+    homepage_url TEXT,
     country_code TEXT,
     region_or_state TEXT,
     city TEXT,
