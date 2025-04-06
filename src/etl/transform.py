@@ -46,37 +46,6 @@ class DataTransformer:
             
         return None
     
-    def _standardize_employee_count(self, value):
-        """Standardize employee count ranges."""
-        if pd.isna(value):
-            return None
-            
-        value = str(value).strip()
-        
-        # Handle exact values first
-        if value.isdigit():
-            return value
-            
-        # Handle ranges like "101-250"
-        range_match = re.match(r'(\d+)-(\d+)', value)
-        if range_match:
-            return value
-            
-        # Handle descriptive values
-        mapping = {
-            '1-50': '1-50',
-            '51-100': '51-100',
-            '101-1000': '101-1000',
-            '1001+': '1001+'
-        }
-        
-        # Normalize different formats to standard ranges
-        for standardized, variations in mapping.items():
-            if value.lower() in variations.lower():
-                return standardized
-                
-        return value
-    
     def _merge_api_org_data(self, org_df, api_data):
         """Merge API organization data with CSV data."""
         if not api_data:
@@ -110,7 +79,6 @@ class DataTransformer:
                 'total_funding': org_api_data.get('total_funding'),
                 'latest_funding_stage': org_api_data.get('latest_funding_stage'),
                 'latest_funding_round_date': org_api_data.get('latest_funding_round_date'),
-                'facebook_url': org_api_data.get('facebook_url'),
                 'linkedin_url': org_api_data.get('linkedin_url'),
                 'twitter_url': org_api_data.get('twitter_url'),
                 'website_url': org_api_data.get('website_url'),
@@ -175,8 +143,6 @@ class DataTransformer:
                 'city': person_api_data.get('city'),
                 'state': person_api_data.get('state'),
                 'country': person_api_data.get('country'),
-                'github_url': person_api_data.get('github_url'),
-                'facebook_url': person_api_data.get('facebook_url'),
                 'twitter_url': person_api_data.get('twitter_url'),
                 'source': 'api'
             }
@@ -211,6 +177,9 @@ class DataTransformer:
     
     def _enrich_jobs_with_api_data(self, jobs_df, people_df, api_job_history):
         """Enrich job data with API job history."""
+        # Filter out jobs with invalid references
+        jobs_df = jobs_df[jobs_df['person_uuid'].isin(people_df['uuid'])]
+
         if not api_job_history:
             return jobs_df
         
@@ -237,10 +206,8 @@ class DataTransformer:
                 
                 new_job_rows.append({
                     'uuid': job_uuid,
-                    'name': f"{person_name} {job['title']} @ {job['organization_name']}",
                     'type': 'job',
                     'person_uuid': person_uuid,
-                    'person_name': person_name,
                     'org_name': job['organization_name'],
                     'title': job['title'],
                     'started_on': job['start_date'],
@@ -295,10 +262,6 @@ class DataTransformer:
         for col in list_columns:
             if col in df.columns:
                 df[col] = df[col].apply(self._parse_list_field)
-        
-        # Standardize employee count
-        if 'employee_count' in df.columns:
-            df['employee_count'] = df['employee_count'].apply(self._standardize_employee_count)
         
         # Convert date fields
         date_columns = ['founded_on', 'last_funding_on', 'closed_on']

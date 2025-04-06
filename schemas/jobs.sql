@@ -1,10 +1,7 @@
 CREATE TABLE IF NOT EXISTS jobs (
     uuid TEXT PRIMARY KEY,
-    name TEXT,
     type TEXT,
-    cb_url TEXT,
     person_uuid TEXT NOT NULL,
-    person_name TEXT,
     org_uuid TEXT,
     org_name TEXT,
     title TEXT,

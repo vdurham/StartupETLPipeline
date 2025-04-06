@@ -4,8 +4,7 @@ CREATE TABLE IF NOT EXISTS founder_features (
     company_categories TEXT,
     avg_company_lifespan REAL,
     total_funding_raised REAL,
-    exits_count INTEGER,
-    job_titles TEXT,
+    num_aquisitions INTEGER,
     leadership_roles_count INTEGER,
     FOREIGN KEY (person_uuid) REFERENCES people (uuid)
 )
