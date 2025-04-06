@@ -44,7 +44,7 @@ def get_sqlite_connection():
         
         conn = sqlite3.connect(db_path)
         # Enable foreign keys
-        conn.execute("PRAGMA foreign_keys = 0")
+        conn.execute("PRAGMA foreign_keys = 1")
         # Return dictionary-like rows
         conn.row_factory = sqlite3.Row
         

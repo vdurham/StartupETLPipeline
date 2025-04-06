@@ -154,10 +154,13 @@ class DataLoader:
                     placeholders = ", ".join(["?" for _ in prepared_row.keys()])
                     values = list(prepared_row.values())
                     
-                    cursor.execute(
-                        f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})",
-                        values
-                    )
+                    try:
+                        cursor.execute(
+                            f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})",
+                            values
+                        )
+                    except Exception as e:
+                        logger.error(f"Error inserting into {table_name} values {values}: {e}")
             
             # Commit the transaction
             conn.execute("COMMIT")

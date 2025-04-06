@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS people (
     last_name TEXT,
     gender TEXT,
     country_code TEXT,
-    region TEXT,
+    region_or_state TEXT,
     city TEXT,
     featured_job_organization_uuid TEXT,
     featured_job_organization_name TEXT,

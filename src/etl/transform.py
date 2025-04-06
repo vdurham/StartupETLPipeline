@@ -5,9 +5,12 @@ import pandas as pd
 import logging
 from datetime import datetime
 import json
-import numpy as np
 import re
-from collections import defaultdict
+
+from src.utils.field_mappings import (
+    ORGANIZATION_FIELD_MAPPINGS, 
+    PEOPLE_FIELD_MAPPINGS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,11 @@ class DataTransformer:
                 'website_url': org_api_data.get('website_url'),
                 'source': 'api'
             }
+
+            for api_field, value in org_api_data.items():
+                # Check if this field has a different name in CSV data
+                csv_field = ORGANIZATION_FIELD_MAPPINGS.get(api_field, api_field)
+                api_row[csv_field] = value
             
             api_rows.append(api_row)
         
@@ -146,6 +154,11 @@ class DataTransformer:
                 'twitter_url': person_api_data.get('twitter_url'),
                 'source': 'api'
             }
+            
+            for api_field, value in person_api_data.items():
+                # Check if this field has a different name in CSV data
+                csv_field = PEOPLE_FIELD_MAPPINGS.get(api_field, api_field)
+                api_row[csv_field] = value
             
             api_rows.append(api_row)
         
@@ -290,6 +303,7 @@ class DataTransformer:
         df['name'] = df['name'].apply(self._standardize_names)
         df['first_name'] = df['first_name'].apply(self._standardize_names)
         df['last_name'] = df['last_name'].apply(self._standardize_names)
+        df['gender'] = df['gender'].replace('not_provided', None)
         
         # Set last processed timestamp
         df['last_processed_at'] = self.transformation_timestamp
@@ -329,8 +343,82 @@ class DataTransformer:
         
         return enriched_df
     
+  
+    def validate_foreign_keys(self, transformed_data):
+        """
+        Validate and prepare data for foreign key constraints.
+        Returns updated transformed data with foreign key issues handled.
+        """
+        logger.info("Validating foreign key relationships")
+        
+        org_df = transformed_data['organizations'].copy()
+        people_df = transformed_data['people'].copy()
+        jobs_df = transformed_data['jobs'].copy()
+        
+        # Valid organization UUIDs
+        valid_org_uuids = set(org_df['uuid'].dropna().unique())
+        logger.info(f"Found {len(valid_org_uuids)} valid organization UUIDs")
+        
+        # Valid people UUIDs
+        valid_people_uuids = set(people_df['uuid'].dropna().unique())
+        logger.info(f"Found {len(valid_people_uuids)} valid people UUIDs")
+        
+        # Fix featured_job_organization_uuid in people
+        invalid_org_refs = people_df[
+            ~people_df['featured_job_organization_uuid'].isna() & 
+            ~people_df['featured_job_organization_uuid'].isin(valid_org_uuids)
+        ]
+        
+        if len(invalid_org_refs) > 0:
+            logger.warning(f"Found {len(invalid_org_refs)} people with invalid featured_job_organization_uuid references")
+            
+            # Set invalid organization references to NULL
+            people_df.loc[
+                ~people_df['featured_job_organization_uuid'].isna() & 
+                ~people_df['featured_job_organization_uuid'].isin(valid_org_uuids),
+                'featured_job_organization_uuid'
+            ] = None
+            
+            logger.info("Set invalid featured_job_organization_uuid references to NULL")
+        
+        # Fix organization references in jobs
+        invalid_job_orgs = jobs_df[
+            ~jobs_df['org_uuid'].isna() & 
+            ~jobs_df['org_uuid'].isin(valid_org_uuids)
+        ]
+        
+        if len(invalid_job_orgs) > 0:
+            logger.warning(f"Found {len(invalid_job_orgs)} jobs with invalid org_uuid references")
+            
+            # Set invalid organization references to NULL
+            jobs_df.loc[
+                ~jobs_df['org_uuid'].isna() & 
+                ~jobs_df['org_uuid'].isin(valid_org_uuids),
+                'org_uuid'
+            ] = None
+            
+            logger.info("Set invalid org_uuid references in jobs to NULL")
+        
+        # Handle jobs with invalid person references
+        invalid_job_people = jobs_df[~jobs_df['person_uuid'].isin(valid_people_uuids)]
+        
+        if len(invalid_job_people) > 0:
+            logger.warning(f"Found {len(invalid_job_people)} jobs with invalid person_uuid references that will be filtered out")
+            
+            # Filter out jobs with invalid person references
+            jobs_df = jobs_df[jobs_df['person_uuid'].isin(valid_people_uuids)]
+            
+            logger.info(f"Filtered out {len(invalid_job_people)} jobs with invalid person references")
+        
+        # Return the updated DataFrames
+        return {
+            'organizations': org_df,
+            'people': people_df,
+            'jobs': jobs_df
+        }
+    
     def transform_all_data(self, extracted_data):
-        """Transform all extracted data."""
+        """Transform all extracted data and validate foreign keys."""
         logger.info("Starting data transformation")
         
         # Transform organizations first
@@ -346,8 +434,13 @@ class DataTransformer:
             extracted_data['api_job_history']
         )
         
-        return {
+        transformed_data = {
             'organizations': organizations_df,
             'people': people_df,
             'jobs': jobs_df
         }
+        
+        # Validate and handle foreign key relationships
+        validated_data = self.validate_foreign_keys(transformed_data)
+        
+        return validated_data
