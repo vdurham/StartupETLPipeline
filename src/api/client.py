@@ -4,9 +4,7 @@ API client for accessing organization and person data from the external API
 import requests
 import logging
 import time
-from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 
 from config import API_BASE_URL, API_KEY, MAX_WORKERS
 
@@ -93,57 +91,39 @@ class ApiClient:
         except Exception as e:
             logger.error(f"Failed to fetch person data for LinkedIn URL {linkedin_url}: {e}")
             return None
-    
 
-    def batch_get_organization_data(self, domains):
-        """Fetch organization data for multiple domains in parallel."""
-        if not domains:
+    def batch_get_data(self, items, data_type):
+        """Fetch data for multiple items in parallel (organization or person data)."""
+        if not items:
             return {}
-            
+
         results = {}
+        
+        # Determine the appropriate function based on the data_type
+        if data_type == 'organization':
+            fetch_function = self.get_organization_data
+        elif data_type == 'person':
+            fetch_function = self.get_person_data
+        else:
+            raise ValueError("Invalid data_type. Use 'organization' or 'person'.")
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             # Submit all requests
-            future_to_domain = {
-                executor.submit(self.get_organization_data, domain): domain 
-                for domain in domains if domain
+            future_to_item = {
+                executor.submit(fetch_function, item): item 
+                for item in items if item
             }
-            
+
             # Process as they complete
-            for future in as_completed(future_to_domain):
-                domain = future_to_domain[future]
+            for future in as_completed(future_to_item):
+                item = future_to_item[future]
                 try:
                     data = future.result()
                     if data:
-                        results[domain] = data
+                        results[item] = data
                 except Exception as e:
-                    logger.error(f"Error processing domain {domain}: {e}")
-        
+                    logger.error(f"Error processing {data_type} {item}: {e}")
+
         return results
-    
-    def batch_get_person_data(self, linkedin_urls):
-        """Fetch person data for multiple LinkedIn URLs in parallel."""
-        if not linkedin_urls:
-            return {}
-            
-        results = {}
-        
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            # Submit all requests
-            future_to_url = {
-                executor.submit(self.get_person_data, url): url 
-                for url in linkedin_urls if url
-            }
-            
-            # Process as they complete
-            for future in as_completed(future_to_url):
-                url = future_to_url[future]
-                try:
-                    data = future.result()
-                    if data:
-                        results[url] = data
-                except Exception as e:
-                    logger.error(f"Error processing LinkedIn URL {url}: {e}")
-        
-        return results
+
 

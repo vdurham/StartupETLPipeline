@@ -5,15 +5,13 @@ import os
 import pandas as pd
 import logging
 from datetime import datetime
-import json
-from collections import defaultdict
 
 from config import (
     ORGANIZATIONS_CSV, PEOPLE_CSV, JOBS_CSV, 
     BATCH_SIZE, INCREMENTAL_MODE
 )
-from src.api.client import ApiClient
 from src.db.connection import get_connection
+pd.set_option('future.no_silent_downcasting', True)
 
 logger = logging.getLogger(__name__)
 
@@ -92,33 +90,27 @@ class DataExtractor:
     
     def extract_organizations(self, incremental=INCREMENTAL_MODE):
         """Extract organization data from CSV and enrich with API data."""
-        # Extract from CSV
         df = self.extract_csv_data(ORGANIZATIONS_CSV, incremental)
         
-        # Get unique domains for API enrichment
         domains = df['domain'].dropna().unique().tolist()
 
         api_data = {}
         if self.api_client is not None:
             logger.info(f"Extracting API data for {len(domains)} organizations")
         
-            # Batch processing for domains
             for i in range(0, len(domains), BATCH_SIZE):
                 batch = domains[i:i+BATCH_SIZE]
                 logger.info(f"Processing batch {i//BATCH_SIZE + 1}/{(len(domains)-1)//BATCH_SIZE + 1} with {len(batch)} domains")
-                batch_data = self.api_client.batch_get_organization_data(batch)
+                batch_data = self.api_client.batch_get_data(batch, 'organization')
                 api_data.update(batch_data)
             
             logger.info(f"Successfully enriched {len(api_data)}/{len(domains)} organizations with API data")
             
-        # Return both DataFrames and API data
         return {
             'csv_data': df,
             'api_data': api_data
         }
 
-
-    
     def extract_people(self, incremental=INCREMENTAL_MODE):
         """Extract people data from CSV and enrich with API data."""
         # Extract from CSV
@@ -127,7 +119,6 @@ class DataExtractor:
         api_data = {}
         if self.api_client is not None:
         
-            # Get unique LinkedIn URLs for API enrichment
             linkedin_urls = df['linkedin_url'].dropna().unique().tolist()
             logger.info(f"Extracting API data for {len(linkedin_urls)} people")
             
@@ -135,22 +126,18 @@ class DataExtractor:
             for i in range(0, len(linkedin_urls), BATCH_SIZE):
                 batch = linkedin_urls[i:i+BATCH_SIZE]
                 logger.info(f"Processing batch {i//BATCH_SIZE + 1}/{(len(linkedin_urls)-1)//BATCH_SIZE + 1} with {len(batch)} LinkedIn URLs")
-                batch_data = self.api_client.batch_get_person_data(batch)
+                batch_data = self.api_client.batch_get_data(batch, 'person')
                 api_data.update(batch_data)
             
             logger.info(f"Successfully enriched {len(api_data)}/{len(linkedin_urls)} people with API data")
         
-        # Return both DataFrames and API data
         return {
             'csv_data': df,
             'api_data': api_data
         }
 
-    
-    
     def extract_jobs(self, incremental=INCREMENTAL_MODE):
         """Extract job data from CSV."""
-        # Extract from CSV
         df = self.extract_csv_data(JOBS_CSV, incremental)
         
         # Convert date fields
@@ -174,28 +161,9 @@ class DataExtractor:
         organizations_data = self.extract_organizations(incremental)
         people_data = self.extract_people(incremental)
         jobs_data = self.extract_jobs(incremental)
-
-        job_history = defaultdict(list)
-        if self.api_client is not None:         
-
-            # Extract job history from people API data
-            for linkedin_url, person_data in people_data['api_data'].items():
-                if 'employment_history' in person_data and person_data['employment_history']:
-                    for job in person_data['employment_history']:
-                        job_info = {
-                            'person_linkedin_url': linkedin_url,
-                            'organization_name': job.get('organization_name'),
-                            'title': job.get('title'),
-                            'start_date': job.get('start_date'),
-                            'end_date': job.get('end_date'),
-                            'is_current': job.get('current', False),
-                            'description': job.get('description'),
-                        }
-                        job_history[linkedin_url].append(job_info)
             
         return {
             'organizations': organizations_data,
             'people': people_data,
             'jobs': jobs_data,
-            'api_job_history': dict(job_history)
         }

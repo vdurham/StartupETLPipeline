@@ -1,45 +1,18 @@
-#!/usr/bin/env python
 """
 Module for founder features processing - designed to be called from the main pipeline
 but also executable as a standalone script if needed.
 """
 import logging
-import sqlite3
-import os
-import sys
 import pandas as pd
-from datetime import datetime
 import json
-
-# Add project root to path for imports when running as standalone
-if __name__ == "__main__":
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
-from src.db.connection import get_connection
 
 logger = logging.getLogger(__name__)
 
 def process_founder_features(conn=None, jobs_df=None, organizations_df=None, people_df=None):
     """
     Process founder features based on jobs and organizations data.
-    Can use either existing DataFrames (from main pipeline) or fetch from database.
-    
-    Args:
-        conn: An existing database connection (optional)
-        jobs_df: DataFrame with jobs data (optional)
-        organizations_df: DataFrame with organizations data (optional)
-        people_df: DataFrame with people data (optional)
-        
-    Returns:
-        DataFrame with founder features
     """
     logger.info("Processing founder features")
-    
-    # Use context manager only if we don't have an existing connection
-    need_connection = conn is None
-    if need_connection:
-        logger.info("No connection, skipping creating Founder Features table")
-        return None
     
     try:     
         founder_jobs = jobs_df[
@@ -103,23 +76,18 @@ def transform_founder_data(founder_jobs, orgs, people):
                         categories = org['category_list'].split(',')
                         company_categories.extend([c.strip() for c in categories])
         
-        # Remove duplicates
         company_categories = list(set(company_categories))
         
-        # Total funding raised
         total_funding_raised = 0
         if not founded_orgs.empty and 'total_funding_usd' in founded_orgs.columns:
             total_funding_raised = founded_orgs['total_funding_usd'].sum()
         
-        # Number of acquisitions 
         num_acquisitions = 0
         if not founded_orgs.empty and 'status' in founded_orgs.columns:
             num_acquisitions = len(founded_orgs[founded_orgs['status'] == 'acquired'])
         
-        # Leadership roles count
         leadership_roles_count = len(founder_job_rows[founder_job_rows['job_type'] == 'executive'])
         
-        # Create feature record
         feature = {
             'person_uuid': person_uuid,
             'total_companies_founded': total_companies_founded,

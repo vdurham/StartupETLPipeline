@@ -45,10 +45,13 @@ class DataLoader:
             if col in row:
                 value = row[col]
                 
-                # Convert pandas NaT, NaN to None
-                if pd.isna(value):
+                if isinstance(value, (list, np.ndarray)):
+                    if len(value) == 0:
+                        prepared_row[col] = None
+                    else:
+                        prepared_row[col] = json.dumps(value.tolist() if isinstance(value, np.ndarray) else value)
+                elif pd.isna(value):
                     prepared_row[col] = None
-                # Handle numpy types explicitly to prevent SQLite errors
                 elif isinstance(value, np.integer):
                     prepared_row[col] = int(value)
                 elif isinstance(value, np.floating):
@@ -58,7 +61,6 @@ class DataLoader:
                 # Convert JSON strings to strings if needed
                 elif isinstance(value, str) and (value.startswith('[') or value.startswith('{')):
                     try:
-                        # Just to validate it's valid JSON
                         json.loads(value)
                         prepared_row[col] = value
                     except:
@@ -78,7 +80,7 @@ class DataLoader:
     
     def load_data(self, data_df, table_name, primary_key='uuid', batch_size=None):
         """
-        Generic function to load any type of data into the database.
+        Load data into the database in batches.
         """
         if batch_size is None:
             batch_size = CHECKPOINT_INTERVAL
@@ -101,21 +103,17 @@ class DataLoader:
         logger.info("Starting data loading")
         
         with get_connection() as conn:
-            # Start a transaction
             conn.execute("BEGIN TRANSACTION")
             
             try:
                 # Load organizations first (foreign key dependencies)
                 self.load_data(transformed_data['organizations'], 'organizations')
                 
-                # Load people next
                 self.load_data(transformed_data['people'], 'people')
                 
-                # Load jobs last
                 self.load_data(transformed_data['jobs'], 'jobs')
                 conn.execute("COMMIT")
                 
-                # Process and load founder features
                 logger.info("Processing and loading founder features")
                 process_founder_features(
                     conn=conn,
@@ -142,11 +140,10 @@ class DataLoader:
         # Filter DataFrame to only include columns that exist in the table
         df_filtered = df[[col for col in df.columns if col in columns]]
         
-        # Start a transaction
         conn.execute("BEGIN TRANSACTION")
+        failed_records_count = 0
         
         try:
-            # Use a row-by-row approach which is safer for handling data types
             for _, row in df_filtered.iterrows():
                 prepared_row = self._prepare_row_for_insert(row, columns)
                 
@@ -163,7 +160,7 @@ class DataLoader:
                     if update_cols:
                         set_clause = ", ".join([f"{col} = ?" for col in update_cols])
                         values = [prepared_row[col] for col in update_cols]
-                        values.append(prepared_row[primary_key])  # For WHERE clause
+                        values.append(prepared_row[primary_key])
                         
                         cursor.execute(
                             f"UPDATE {table_name} SET {set_clause} WHERE {primary_key} = ?",
@@ -181,10 +178,11 @@ class DataLoader:
                             values
                         )
                     except Exception as e:
-                        logger.error(f"Error inserting into {table_name} values {values}: {e}")
+                        failed_records_count += 1
             
-            # Commit the transaction
             conn.execute("COMMIT")
+            if failed_records_count > 0:
+                logger.warning(f"Failed to insert/update {failed_records_count} records")
             
         except Exception as e:
             logger.error(f"Error during bulk upsert: {e}")

@@ -7,10 +7,6 @@ from datetime import datetime
 import json
 import re
 
-from src.utils.field_mappings import (
-    ORGANIZATION_FIELD_MAPPINGS, 
-    PEOPLE_FIELD_MAPPINGS
-)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +34,6 @@ class DataTransformer:
             
         # Handle string representations of lists
         if isinstance(value, str):
-            # Remove brackets if present and split by commas
             value = value.strip()
             if value.startswith('[') and value.endswith(']'):
                 value = value[1:-1]
@@ -54,7 +49,6 @@ class DataTransformer:
         if not api_data:
             return org_df
             
-        # Create a new DataFrame for API data
         api_rows = []
         
         for domain, org_api_data in api_data.items():
@@ -64,46 +58,35 @@ class DataTransformer:
             # Extract and flatten the API data
             api_row = {
                 'domain': domain,
-                'name': org_api_data.get('name'),
+                'name': org_api_data.get('name'),            
                 'industry': org_api_data.get('industry'),
                 'industries': json.dumps(org_api_data.get('industries', [])),
                 'secondary_industries': json.dumps(org_api_data.get('secondary_industries', [])),
                 'keywords': json.dumps(org_api_data.get('keywords', [])),
                 'technology_names': json.dumps(org_api_data.get('technology_names', [])),
-                'short_description': org_api_data.get('short_description'),
                 'city': org_api_data.get('city'),
-                'state': org_api_data.get('state'),
-                'country': org_api_data.get('country'),
+                'region': org_api_data.get('state'),
                 'postal_code': org_api_data.get('postal_code'),
-                'street_address': org_api_data.get('street_address'),
-                'founded_year': org_api_data.get('founded_year'),
-                'annual_revenue': org_api_data.get('annual_revenue'),
-                'estimated_num_employees': org_api_data.get('estimated_num_employees'),
-                'total_funding': org_api_data.get('total_funding'),
+                'address': org_api_data.get('street_address'),
+                'annual_revenue': int(revenue) if (revenue := org_api_data.get('annual_revenue')) is not None else None,
+                'total_funding_usd': int(funding) if (funding := org_api_data.get('total_funding')) is not None else None,
                 'latest_funding_stage': org_api_data.get('latest_funding_stage'),
-                'latest_funding_round_date': org_api_data.get('latest_funding_round_date'),
+                'last_funding_on': org_api_data.get('latest_funding_round_date'),
                 'linkedin_url': org_api_data.get('linkedin_url'),
                 'twitter_url': org_api_data.get('twitter_url'),
-                'website_url': org_api_data.get('website_url'),
+                'homepage_url': org_api_data.get('website_url'),
                 'source': 'api'
             }
-
-            for api_field, value in org_api_data.items():
-                # Check if this field has a different name in CSV data
-                csv_field = ORGANIZATION_FIELD_MAPPINGS.get(api_field, api_field)
-                api_row[csv_field] = value
             
             api_rows.append(api_row)
         
         if not api_rows:
             return org_df
             
-        # Create DataFrame from API data
         api_df = pd.DataFrame(api_rows)
         
-        # Convert date fields
-        if 'latest_funding_round_date' in api_df.columns:
-            api_df['latest_funding_round_date'] = pd.to_datetime(api_df['latest_funding_round_date'], errors='coerce')
+        if 'last_funding_on' in api_df.columns:
+            api_df['last_funding_on'] = pd.to_datetime(api_df['last_funding_on'], errors='coerce')
         
         # Merge with original DataFrame based on domain
         merged_df = pd.merge(
@@ -118,6 +101,11 @@ class DataTransformer:
         for col in api_df.columns:
             if col in merged_df.columns and f"{col}_api" in merged_df.columns:
                 merged_df[col] = merged_df[col].fillna(merged_df[f"{col}_api"])
+
+                # Use max total_funding_usd if available
+                if 'total_funding_usd_api' in merged_df.columns:
+                    merged_df['total_funding_usd'] = merged_df[['total_funding_usd', 'total_funding_usd_api']].max(axis=1)
+
                 merged_df = merged_df.drop(f"{col}_api", axis=1)
         
         # Update source to indicate if enriched with API data
@@ -130,7 +118,6 @@ class DataTransformer:
         if not api_data:
             return people_df
         
-        # Create DataFrame for API data
         api_rows = []
         
         for linkedin_url, person_api_data in api_data.items():
@@ -145,20 +132,15 @@ class DataTransformer:
                 'last_name': person_api_data.get('last_name'),
                 'headline': person_api_data.get('headline'),
                 'seniority': person_api_data.get('seniority'),
-                'functions': json.dumps(person_api_data.get('functions', [])),
-                'departments': json.dumps(person_api_data.get('departments', [])),
-                'subdepartments': json.dumps(person_api_data.get('subdepartments', [])),
+                'functions': json.dumps(person_api_data.get('functions')) if person_api_data.get('functions') else None,
+                'departments': json.dumps(person_api_data.get('departments')) if person_api_data.get('departments') else None,
                 'city': person_api_data.get('city'),
-                'state': person_api_data.get('state'),
+                'region': person_api_data.get('state'),
                 'country': person_api_data.get('country'),
                 'twitter_url': person_api_data.get('twitter_url'),
                 'source': 'api'
             }
             
-            for api_field, value in person_api_data.items():
-                # Check if this field has a different name in CSV data
-                csv_field = PEOPLE_FIELD_MAPPINGS.get(api_field, api_field)
-                api_row[csv_field] = value
             
             api_rows.append(api_row)
         
@@ -188,76 +170,6 @@ class DataTransformer:
         
         return merged_df
     
-    def _enrich_jobs_with_api_data(self, jobs_df, people_df, api_job_history):
-        """Enrich job data with API job history."""
-        # Filter out jobs with invalid references
-        jobs_df = jobs_df[jobs_df['person_uuid'].isin(people_df['uuid'])]
-
-        if not api_job_history:
-            return jobs_df
-        
-        # Create a mapping from person UUID to LinkedIn URL
-        uuid_to_linkedin = dict(zip(people_df['uuid'], people_df['linkedin_url']))
-        
-        # Create a mapping from LinkedIn URL to person UUID
-        linkedin_to_uuid = {url: uuid for uuid, url in uuid_to_linkedin.items() if url}
-        
-        # Create new rows for API job data
-        new_job_rows = []
-        
-        for linkedin_url, jobs in api_job_history.items():
-            if linkedin_url not in linkedin_to_uuid:
-                continue
-                
-            person_uuid = linkedin_to_uuid[linkedin_url]
-            person_row = people_df[people_df['uuid'] == person_uuid].iloc[0]
-            person_name = person_row['name']
-            
-            for job in jobs:
-                # Generate a UUID for the job
-                job_uuid = f"api-{person_uuid}-{len(new_job_rows)}"
-                
-                new_job_rows.append({
-                    'uuid': job_uuid,
-                    'type': 'job',
-                    'person_uuid': person_uuid,
-                    'org_name': job['organization_name'],
-                    'title': job['title'],
-                    'started_on': job['start_date'],
-                    'ended_on': job['end_date'],
-                    'is_current': job['is_current'],
-                    'description': job['description'],
-                    'source': 'api',
-                    'created_at': self.transformation_timestamp,
-                    'updated_at': self.transformation_timestamp
-                })
-        
-        if not new_job_rows:
-            return jobs_df
-            
-        # Create DataFrame from new job rows
-        new_jobs_df = pd.DataFrame(new_job_rows)
-        
-        # Convert date fields
-        date_columns = ['started_on', 'ended_on']
-        for col in date_columns:
-            if col in new_jobs_df.columns:
-                new_jobs_df[col] = pd.to_datetime(new_jobs_df[col], errors='coerce')
-        
-        # Append new jobs to existing jobs DataFrame
-        # Only add jobs that don't already exist (based on person, org, title, dates)
-        combined_df = pd.concat([jobs_df, new_jobs_df], ignore_index=True)
-        
-        # Remove duplicates
-        # Consider jobs as duplicates if they have the same person_uuid, org_name, title, and dates
-        # Keep the CSV data as the master source
-        combined_df = combined_df.drop_duplicates(
-            subset=['person_uuid', 'org_name', 'title', 'started_on', 'ended_on'],
-            keep='first'
-        )
-        
-        return combined_df
-    
     def transform_organizations(self, data):
         """Transform organization data."""
         logger.info("Transforming organization data")
@@ -269,6 +181,7 @@ class DataTransformer:
         df['name'] = df['name'].apply(self._standardize_names)
         df['legal_name'] = df['legal_name'].apply(self._standardize_names)
         df['domain'] = df['domain'].str.lower().str.strip() if 'domain' in df.columns else None
+        df['employee_count'] = df['employee_count'].replace('unknown', None)
        
         # Parse list fields
         list_columns = ['category_list', 'category_groups_list', 'roles']
@@ -315,8 +228,9 @@ class DataTransformer:
         
         return enriched_df
     
-    def transform_jobs(self, data, people_df, api_job_history):
+    def transform_jobs(self, data):
         """Transform job data."""
+
         logger.info("Transforming job data")
         
         df = data['csv_data'].copy()
@@ -336,12 +250,9 @@ class DataTransformer:
         # Set last processed timestamp
         df['last_processed_at'] = self.transformation_timestamp
         
-        # Enrich with API job history
-        enriched_df = self._enrich_jobs_with_api_data(df, people_df, api_job_history)
+        logger.info(f"Transformed {len(df)} job records")
         
-        logger.info(f"Transformed {len(enriched_df)} job records")
-        
-        return enriched_df
+        return df
     
   
     def validate_foreign_keys(self, transformed_data):
@@ -427,12 +338,8 @@ class DataTransformer:
         # Transform people
         people_df = self.transform_people(extracted_data['people'])
         
-        # Transform jobs, enriched with API job history
-        jobs_df = self.transform_jobs(
-            extracted_data['jobs'],
-            people_df,
-            extracted_data['api_job_history']
-        )
+        # Transform jobs
+        jobs_df = self.transform_jobs(extracted_data['jobs'])
         
         transformed_data = {
             'organizations': organizations_df,

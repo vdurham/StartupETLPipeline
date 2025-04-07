@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS people (
     last_name TEXT,
     gender TEXT,
     country_code TEXT,
-    region_or_state TEXT,
+    region TEXT,
     city TEXT,
     featured_job_organization_uuid TEXT,
     featured_job_organization_name TEXT,
@@ -16,14 +16,13 @@ CREATE TABLE IF NOT EXISTS people (
     twitter_url TEXT,
     -- API enriched fields
     headline TEXT,
-    seniority TEXT,
     functions TEXT,
     departments TEXT,
     -- Metadata fields
     source TEXT NOT NULL,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    last_processed_at TIMESTAMP,
+    last_processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- Foreign key reference to featured org
     FOREIGN KEY (featured_job_organization_uuid) 
         REFERENCES organizations(uuid) ON DELETE SET NULL

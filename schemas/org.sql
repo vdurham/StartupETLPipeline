@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     domain TEXT,
     homepage_url TEXT,
     country_code TEXT,
-    region_or_state TEXT,
+    region TEXT,
     city TEXT,
     address TEXT,
     postal_code TEXT,
@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS organizations (
     technology_names TEXT,
     annual_revenue REAL,
     latest_funding_stage TEXT,
-    estimated_num_employees INTEGER,
     -- Metadata fields
     source TEXT NOT NULL,
     created_at TIMESTAMP,

@@ -27,12 +27,10 @@ def setup_logger():
         '%(asctime)s - %(levelname)s - %(message)s'
     )
     
-    # File handler
     file_handler = logging.FileHandler(LOG_FILE)
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
     
-    # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)

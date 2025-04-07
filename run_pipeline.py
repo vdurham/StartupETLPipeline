@@ -4,10 +4,11 @@ Main script to run the Ensemble Similarity Pipeline
 """
 import os
 import sys
-import logging
 import argparse
 from datetime import datetime
 import time
+from dotenv import load_dotenv
+load_dotenv()
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -20,7 +21,6 @@ from src.db.connection import init_database
 from src.api.client import ApiClient
 from src.utils.logger import setup_logger, log_pipeline_start, log_pipeline_end, log_stage
 from src.utils.helpers import (
-    load_pipeline_state, save_pipeline_state, 
     get_database_stats, validate_data_integrity
 )
 
@@ -67,9 +67,6 @@ def run_pipeline(args):
         incremental_mode = True
     
     logger.info(f"Running pipeline in {'incremental' if incremental_mode else 'full'} mode")
-    
-    # Load pipeline state
-    pipeline_state = load_pipeline_state()
     
     # Initialize metrics collection
     pipeline_metrics = {
@@ -138,12 +135,7 @@ def run_pipeline(args):
             'jobs_count': len(extracted_data['jobs']['csv_data']),
             'api_organizations_count': len(extracted_data['organizations']['api_data']),
             'api_people_count': len(extracted_data['people']['api_data']),
-            'api_job_history_count': sum(len(jobs) for jobs in extracted_data.get('api_job_history', {}).values()),
         }
-        
-        # Update pipeline state with extraction timestamp
-        pipeline_state['last_extract_time'] = datetime.now()
-        save_pipeline_state(pipeline_state)
         
         # Transform phase
         transformed_data = None
@@ -162,11 +154,6 @@ def run_pipeline(args):
             'jobs_count': len(transformed_data['jobs']),
         }
         
-        # Update pipeline state with transformation timestamp
-        pipeline_state['last_transform_time'] = datetime.now()
-        save_pipeline_state(pipeline_state)
-
-        
         # Load phase
         log_stage("Load")
         load_start_time = time.time()
@@ -179,10 +166,6 @@ def run_pipeline(args):
         pipeline_metrics['load_metrics'] = {
             'duration_seconds': load_end_time - load_start_time,
         }
-        
-        # Update pipeline state with load timestamp
-        pipeline_state['last_load_time'] = datetime.now()
-        save_pipeline_state(pipeline_state)
         
         # Validate data integrity after pipeline run
         log_stage("Data Validation")
@@ -219,11 +202,6 @@ def run_pipeline(args):
         
         # Log pipeline end
         log_pipeline_end(start_time)
-        
-        # Update pipeline state with run timestamp
-        pipeline_state['last_run_time'] = datetime.now()
-        pipeline_state['last_run_status'] = 'success' if 'error' not in pipeline_metrics else 'error'
-        save_pipeline_state(pipeline_state)
 
 if __name__ == "__main__":
     args = parse_args()
