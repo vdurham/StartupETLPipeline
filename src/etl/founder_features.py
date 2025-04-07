@@ -8,7 +8,7 @@ import json
 
 logger = logging.getLogger(__name__)
 
-def process_founder_features(conn=None, jobs_df=None, organizations_df=None, people_df=None):
+def process_founder_features(conn=None, jobs_df=None, organizations_df=None):
     """
     Process founder features based on jobs and organizations data.
     """
@@ -20,10 +20,9 @@ def process_founder_features(conn=None, jobs_df=None, organizations_df=None, peo
             (jobs_df['title'].str.lower().str.contains('founder', na=False))
         ].copy()
         orgs = organizations_df
-        people = people_df
         
         # Transform data
-        features_df = transform_founder_data(founder_jobs, orgs, people)
+        features_df = transform_founder_data(founder_jobs, orgs)
         
         # Load data
         load_founder_features(conn, features_df)
@@ -34,12 +33,12 @@ def process_founder_features(conn=None, jobs_df=None, organizations_df=None, peo
         logger.error(f"Error processing founder features: {e}")
         return None
 
-def transform_founder_data(founder_jobs, orgs, people):
+def transform_founder_data(founder_jobs, orgs):
     """Transform founder data to create founder features"""
     logger.info("Transforming founder data")
     
     # Unique founders
-    founders = founder_jobs[['person_uuid', 'person_name']].drop_duplicates()
+    founders = founder_jobs[['person_uuid']].drop_duplicates()
     logger.info(f"Processing features for {len(founders)} unique founders")
     
     founder_features = []
@@ -64,7 +63,7 @@ def transform_founder_data(founder_jobs, orgs, people):
         
         # Company categories
         company_categories = []
-        if not founded_orgs.empty and 'category_list' in founded_orgs.columns:
+        if 'category_list' in founded_orgs.columns:
             for _, org in founded_orgs.iterrows():
                 if pd.notna(org.get('category_list')) and isinstance(org['category_list'], str):
                     try:
@@ -83,8 +82,8 @@ def transform_founder_data(founder_jobs, orgs, people):
             total_funding_raised = founded_orgs['total_funding_usd'].sum()
         
         num_acquisitions = 0
-        if not founded_orgs.empty and 'status' in founded_orgs.columns:
-            num_acquisitions = len(founded_orgs[founded_orgs['status'] == 'acquired'])
+        if 'status' in founded_orgs.columns:
+            num_acquisitions = founded_orgs['status'].eq('acquired').sum()
         
         leadership_roles_count = len(founder_job_rows[founder_job_rows['job_type'] == 'executive'])
         
@@ -94,7 +93,8 @@ def transform_founder_data(founder_jobs, orgs, people):
             'company_categories': json.dumps(company_categories),
             'total_funding_raised': total_funding_raised,
             'num_aquisitions': num_acquisitions,
-            'leadership_roles_count': leadership_roles_count
+            'leadership_roles_count': leadership_roles_count,
+            'last_processed_at': pd.Timestamp.now()
         }
         
         founder_features.append(feature)

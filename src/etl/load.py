@@ -66,7 +66,7 @@ class DataLoader:
                     except:
                         prepared_row[col] = str(value)
                 # Convert lists/dicts to JSON strings
-                elif isinstance(value, (list, dict)):
+                elif isinstance(value, (dict)):
                     prepared_row[col] = json.dumps(value)
                 # Convert any other numpy array or complex object to string
                 elif isinstance(value, (np.ndarray, np.generic)) or not isinstance(value, (str, int, float, bool, type(None))):
@@ -118,8 +118,7 @@ class DataLoader:
                 process_founder_features(
                     conn=conn,
                     jobs_df=transformed_data['jobs'],
-                    organizations_df=transformed_data['organizations'],
-                    people_df=transformed_data['people']
+                    organizations_df=transformed_data['organizations']
                 )
                                 
                 logger.info("Data loading completed successfully")
